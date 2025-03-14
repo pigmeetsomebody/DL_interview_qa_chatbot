@@ -8,16 +8,16 @@ from pathlib import Path
 from collections import defaultdict
 
 # 配置参数
-MARKDOWN_PATH = os.path.expanduser("./machine-learning-interview.md")
-OUTPUT_JSON = "interview-qa.json"
+MARKDOWN_PATH = os.path.expanduser("../llm_qa.md")
+OUTPUT_JSON = "interview-llm-qa.json"
 DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
-API_KEY = "sk-xxx"  # 替换为你的API Key
+API_KEY = "sk-bf951017394346f5b791d662d28c25d6"  # 替换为你的API Key
 HEADERS = {
     "Authorization": f"Bearer {API_KEY}",
     "Content-Type": "application/json"
 }
 
-INSTRUCTION = "请以专业面试官的角度，用中文详细回答以下深度学习面试问题："
+INSTRUCTION = "请以专业面试者的角度，用中文简要回答以下大语言模型面试问题,不需要给出问题"
 
 
 def split_question_number(full_question: str) -> tuple:
@@ -30,22 +30,17 @@ def split_question_number(full_question: str) -> tuple:
 
 
 def extract_questions(md_path: str) -> List[str]:
-    question_pattern = re.compile(r'-\s\[(.*?)\]\s\[(.*?)\]\(#.*?\)')
+    """从Markdown文件提取问题列表"""
     questions = []
-    seen = set()
+    question_pattern = re.compile(r'^-\s+\d+\s+(.+)$')  # 匹配问题模式
 
     with open(md_path, 'r', encoding='utf-8') as f:
         for line in f:
-            match = question_pattern.search(line)
-            if match:
-                # 直接获取完整的问题编号+内容
-                full_question = match.group(2).strip()
-                question_id, clean_question = split_question_number(full_question)
-                # 去除编号
-                # clean_question = re.sub(r'^\d+(-\d+)*\s+', '', full_question)
-                if question_id and clean_question and clean_question not in seen:
-                    seen.add(clean_question)
-                    questions.append((question_id, clean_question))
+            line = line.strip()
+            if match := question_pattern.match(line):
+                question = match.group(1)
+                # 清理问题末尾的问号（如果有）
+                questions.append(question.rstrip('？?'))
     return questions
 
 
@@ -87,7 +82,7 @@ def batch_get_answers(questions: List[str], batch_size=10, max_retries=3) -> Lis
         payload = {
             "model": "deepseek-chat",
             "messages": [
-                {"role": "user", "content": f"请以专业面试者的角度,依次简短地回答以下深度学习面试问题：\n" + "\n".join(
+                {"role": "user", "content": f"请以专业面试者的角度,依次简短地回答以下深度学习面试问题，所有答案以json数组给出,key统一用\"answer\"标识,不需要给出问题:\n" + "\n".join(
                     [f"{i + 1}. {q}" for i, q in enumerate(batch)]
                 )}
             ],
@@ -99,6 +94,7 @@ def batch_get_answers(questions: List[str], batch_size=10, max_retries=3) -> Lis
             response = requests.post(DEEPSEEK_API_URL, headers=HEADERS, json=payload, timeout=30)
             response.raise_for_status()
             answers = parse_batch_response(response.json(), batch_size)
+            print(answers)
             all_answers.extend(answers)
             if answers:
                 continue
@@ -109,7 +105,7 @@ def batch_get_answers(questions: List[str], batch_size=10, max_retries=3) -> Lis
 
         # response = requests.post(DEEPSEEK_API_URL, headers=HEADERS, json=payload)
         # answers = parse_batch_response(response.json(), batch_size)
-    return all_answers if len(all_answers) == len(questions) else [""] * len(questions)
+    return all_answers
 
 
 
@@ -127,12 +123,22 @@ def print_group_queation_tree(group_questions: dict):
 def parse_batch_response(response: dict, batch_size: int) -> List[str]:
     print(response)
     """解析批量响应"""
+
     content = response["choices"][0]["message"]["content"]
+    content = re.sub(r'^```json\s*|\s*```$', '', content, flags=re.MULTILINE)
     print(content)
     if content:
         # 按问题序号分割答案，需要根据实际返回格式调整
-        answers = re.split(r'\n\d+\.\s*', content)[1:]
-        return answers if len(answers) == batch_size else [""] * batch_size
+        answers = [""] * batch_size
+        try:
+            items = json.loads(content)  # 将JSON字符串转换为Python列表
+            answers = [item['answer'] for item in items]
+        except json.JSONDecodeError as e:
+            print("JSON解析错误:", e)
+        except KeyError as e:
+            print("键不存在:", e)
+        # answers = re.split(r'\d+\. Ans:\s*', content)[1:]
+        return answers
     return [""] * batch_size
 
 
@@ -206,9 +212,12 @@ def build_batched_dataset(group_questions: dict) -> List[Dict]:
     for parent, items in group_questions.items():
         batch_questions = [item[1] for item in items]
         batch_answers = batch_get_answers(batch_questions, min(len(batch_questions), 2))
+
         # batch_answers = batch_get_answers(batch_questions, len(batch_questions))
         print(f"Length of batch_answers:{len(batch_answers)}, Length of batch_questions:{len(batch_questions)}")
-        if len(batch_answers) > 0 and len(batch_answers) == len(batch_questions):
+        print(f"batch_answers:{batch_answers}")
+
+        if len(batch_answers) > 0:
             for ques, ans in zip(batch_questions, batch_answers):
                 dataset.append({
                     "instruction": INSTRUCTION,
@@ -230,17 +239,15 @@ def main():
     questions = extract_questions(MARKDOWN_PATH)
     print(f"Found {len(questions)} unique questions")
     print(f"======================================\n{questions}")
-    grouped = group_questions(questions)
-    print_group_queation_tree(grouped)
     # 步骤2：生成问答对
-    # dataset = build_dataset(questions)
-    dataset = build_batched_dataset(grouped)
+    dataset = build_dataset(questions)
+    #dataset = build_batched_dataset(grouped)
     # 步骤3：数据清洗
     # 去重（基于问题）
     seen = set()
     cleaned_dataset = []
     for item in dataset:
-        if item["input"] not in seen:
+        if item["input"] not in seen and item["output"]:
             seen.add(item["input"])
             cleaned_dataset.append(item)
 
