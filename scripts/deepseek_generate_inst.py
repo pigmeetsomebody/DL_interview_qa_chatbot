@@ -4,11 +4,11 @@ import time
 from typing import List, Dict
 
 # 配置参数
-DEEPSEEK_API_KEY = "sk-xxx"  # 替换为你的API密钥
+API_KEY = "sk-xxx"  # 替换为你的API Key
 API_URL = "https://api.deepseek.com/v1/chat/completions"  # 确认最新的API地址
 MODEL_NAME = "deepseek-chat"  # 根据实际模型名称调整
 HEADERS = {
-    "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+    "Authorization": f"Bearer {API_KEY}",
     "Content-Type": "application/json"
 }
 
@@ -112,15 +112,13 @@ def expand_dataset(input_file: str, output_file: str, expansion_factor: int = 2)
             if new_answer:
                 # 构建新条目
                 new_entry = {
-                    "instruction": item["instruction"],
+                    "instruction": "请以专业面试者的角度，用中文简要回答以下算法工程师面试问题，回答时不需要重复问题",
                     "input": new_question,
                     "output": new_answer
                 }
                 new_entries.append(new_entry)
                 existing_questions.add(normalized)
                 print(f"成功生成新条目: {new_entry}")
-                exit(1)
-
 
             # 避免速率限制
             time.sleep(1)
@@ -139,6 +137,6 @@ def expand_dataset(input_file: str, output_file: str, expansion_factor: int = 2)
 if __name__ == "__main__":
     expand_dataset(
         input_file="../data/merged_interview_qa.json",  # 输入文件路径
-        output_file="expanded_qa_dataset.json",  # 输出文件路径
-        expansion_factor=2  # 每个问题生成2个变体
+        output_file="../data/expanded_qa_dataset.json",  # 输出文件路径
+        expansion_factor=5  # 每个问题生成2个变体
     )

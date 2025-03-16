@@ -10,8 +10,8 @@ from collections import defaultdict
 # 配置参数
 MARKDOWN_PATH = os.path.expanduser("../llm_qa.md")
 OUTPUT_JSON = "interview-llm-qa.json"
-DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
-API_KEY = "sk-xxx"  # 替换为你的API Key
+DEEPSEEK_API_URL = "https://api.deepseek.com"
+API_KEY = "sk-1d12775e59ba45cbb5afbd0c91bd1c2f"  # 替换为你的API Key
 HEADERS = {
     "Authorization": f"Bearer {API_KEY}",
     "Content-Type": "application/json"
